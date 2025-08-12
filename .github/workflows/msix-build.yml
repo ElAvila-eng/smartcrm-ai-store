@@ -1,0 +1,67 @@
+name: MSIX Build and Store Deploy
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v1.3
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build application (Release)
+      run: dotnet build --configuration Release --no-restore
+
+    - name: Create MSIX package
+      shell: powershell
+      run: |
+        # Create temporary directory for MSIX build
+        New-Item -ItemType Directory -Force -Path "msix-temp"
+        
+        # Copy manifest and assets to temp directory
+        Copy-Item "Microsoft Store\Package.appxmanifest" "msix-temp\"
+        Copy-Item -Recurse "Microsoft Store\Assets" "msix-temp\"
+        
+        # Use MakeAppx to create package
+        & "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.0.22621.0\x64\makeappx.exe" pack /d "msix-temp" /p "SmartCRM_AI.msix" /l
+
+    - name: Upload MSIX artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: SmartCRM-AI-MSIX
+        path: SmartCRM_AI.msix
+
+    # Optional: Sign MSIX (requires certificate in secrets)
+    # - name: Sign MSIX
+    #   shell: powershell
+    #   run: |
+    #     $pfxPath = "temp-cert.pfx"
+    #     [System.IO.File]::WriteAllBytes($pfxPath, [System.Convert]::FromBase64String("${{ secrets.SIGNING_CERTIFICATE }}"))
+    #     & "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" sign /fd SHA256 /a /f $pfxPath /p "${{ secrets.CERTIFICATE_PASSWORD }}" "SmartCRM_AI.msix"
+    #     Remove-Item $pfxPath
+
+    # Optional: Deploy to Microsoft Store (requires Store credentials)
+    # - name: Deploy to Microsoft Store
+    #   uses: isaacrlevin/windows-store-action@1.0
+    #   with:
+    #     tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+    #     client-id: ${{ secrets.AZURE_CLIENT_ID }}
+    #     client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+    #     app-id: ${{ secrets.STORE_APP_ID }}
+    #     package-path: "SmartCRM_AI.msix"
